@@ -1,8 +1,7 @@
 """
-Клиент для OpenStreetMap:
-
-1. Поиск региона через Nominatim.
-2. Загрузка сельскохозяйственных контуров через Overpass API.
+Клиент OSM:
+- поиск региона: Nominatim + Photon (фолбэк);
+- сельхозконтуры: Overpass API (несколько зеркал).
 """
 
 from typing import Any, Dict, List, Tuple
@@ -10,90 +9,162 @@ from typing import Any, Dict, List, Tuple
 import requests
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+PHOTON_URL = "https://photon.komoot.io/api/"
 
+# Overpass-зеркала: первые три — основные, остальные — резерв
+OVERPASS_URLS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+]
+
+# ВАЖНО: без Accept — Overpass сам ставит формат по [out:json]
 HEADERS = {
-    "User-Agent": "vegetation-monitor/1.0 (contact@example.com)"
+    "User-Agent": "vegetation-monitor/1.0 (contact@example.com)",
 }
 
+TIMEOUT = 30
 
-def search_regions(query: str, limit: int = 5) -> List[Dict[str, Any]]:
-    """
-    Поиск региона по названию.
 
-    Пример:
-        search_regions("Краснодарский край")
-    """
-    params = {
-        "q": query,
-        "format": "jsonv2",
-        "limit": limit,
-    }
+def _request_json(method: str, url: str, **kwargs) -> Any:
+    """GET/POST с таймаутом и обходом SSL-перехвата."""
+    kwargs.setdefault("headers", HEADERS)
+    kwargs.setdefault("timeout", TIMEOUT)
 
-    response = requests.get(
-        NOMINATIM_URL,
-        params=params,
-        headers=HEADERS,
-        timeout=20,
-    )
+    try:
+        response = requests.request(method, url, **kwargs)
+    except requests.exceptions.SSLError:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        kwargs["verify"] = False
+        response = requests.request(method, url, **kwargs)
+
     response.raise_for_status()
+    return response.json()
+
+
+# ----------------------------------------------------------------------
+# Поиск региона
+# ----------------------------------------------------------------------
+def search_regions(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    errors = []
+
+    try:
+        return _search_nominatim(query, limit)
+    except Exception as exc:
+        errors.append(f"Nominatim: {exc}")
+
+    try:
+        return _search_photon(query, limit)
+    except Exception as exc:
+        errors.append(f"Photon: {exc}")
+
+    raise RuntimeError(" | ".join(errors))
+
+
+def _search_nominatim(query: str, limit: int) -> List[Dict[str, Any]]:
+    data = _request_json(
+        "GET",
+        NOMINATIM_URL,
+        params={"q": query, "format": "jsonv2", "limit": limit},
+    )
 
     results = []
-
-    for item in response.json():
+    for item in data:
         bbox_raw = item.get("boundingbox")
+        bbox = [float(x) for x in bbox_raw] if bbox_raw and len(bbox_raw) == 4 else None
 
-        if bbox_raw and len(bbox_raw) == 4:
-            # Nominatim возвращает: [south, north, west, east]
-            bbox = [float(x) for x in bbox_raw]
-        else:
-            bbox = None
+        results.append({
+            "name": item.get("display_name"),
+            "lat": float(item.get("lat")),
+            "lon": float(item.get("lon")),
+            "bbox": bbox,
+        })
 
-        results.append(
-            {
-                "name": item.get("display_name"),
-                "lat": float(item.get("lat")),
-                "lon": float(item.get("lon")),
-                "bbox": bbox,
-            }
-        )
+    if not results:
+        raise RuntimeError("пустой ответ")
 
     return results
 
 
+def _search_photon(query: str, limit: int) -> List[Dict[str, Any]]:
+    data = _request_json("GET", PHOTON_URL, params={"q": query, "limit": limit})
+
+    results = []
+    for feature in data.get("features", []):
+        props = feature.get("properties", {})
+        coords = feature.get("geometry", {}).get("coordinates") or [None, None]
+
+        parts = [props.get(k) for k in ("name", "city", "state", "country") if props.get(k)]
+        name = props.get("name") or ", ".join(parts)
+
+        results.append({
+            "name": name,
+            "lat": float(coords[1]),
+            "lon": float(coords[0]),
+            "bbox": None,
+        })
+
+    if not results:
+        raise RuntimeError("пустой ответ")
+
+    return results
+
+
+# ----------------------------------------------------------------------
+# Сельхозконтуры через Overpass
+# ----------------------------------------------------------------------
 def get_farmland_polygons(
     bbox: Tuple[float, float, float, float],
     limit: int = 100,
 ) -> Dict[str, Any]:
-    """
-    Загрузка сельхозконтуров внутри bbox.
-
-    Параметры:
-        bbox = (south, west, north, east)
-
-    Возвращает:
-        GeoJSON FeatureCollection
-    """
     south, west, north, east = bbox
 
+    # Расширенный набор тегов для российских сельхозземель
     query = f"""
-    [out:json][timeout:45];
-    way
-      ["landuse"~"farmland|cropland|orchard|vineyard|meadow|farm"]
-      ({south},{west},{north},{east});
-    out geom;
+    [out:json][timeout:60];
+    (
+      way["landuse"~"farmland|meadow|orchard|vineyard|plant_nursery|greenhouse_horticulture"]
+        ({south},{west},{north},{east});
+      way["natural"="grassland"]
+        ({south},{west},{north},{east});
+    );
+    out geom {limit};
     """
 
-    response = requests.post(
-        OVERPASS_URL,
-        data={"data": query},
-        headers=HEADERS,
-        timeout=80,
-    )
-    response.raise_for_status()
+    errors = []
 
-    data = response.json()
+    for url in OVERPASS_URLS:
+        try:
+            response = requests.post(
+                url,
+                data={"data": query},
+                headers=HEADERS,
+                timeout=90,
+            )
 
+            if response.status_code != 200:
+                errors.append(f"{url}: HTTP {response.status_code}")
+                continue
+
+            data = response.json()
+            elements = data.get("elements", [])
+            print(f"[Overpass] {url}: найдено объектов {len(elements)}")
+            return _overpass_to_geojson(data, limit)
+
+        except requests.exceptions.Timeout:
+            errors.append(f"{url}: таймаут")
+            continue
+        except Exception as exc:
+            errors.append(f"{url}: {exc}")
+            continue
+
+    raise RuntimeError(" | ".join(errors))
+
+
+def _overpass_to_geojson(data: Dict[str, Any], limit: int) -> Dict[str, Any]:
     features = []
 
     for element in data.get("elements", []):
@@ -104,7 +175,7 @@ def get_farmland_polygons(
         if not geometry:
             continue
 
-        coordinates = [[point["lon"], point["lat"]] for point in geometry]
+        coordinates = [[p["lon"], p["lat"]] for p in geometry]
 
         if len(coordinates) < 3:
             continue
@@ -114,13 +185,10 @@ def get_farmland_polygons(
 
         tags = element.get("tags", {})
 
-        feature = {
+        features.append({
             "type": "Feature",
             "id": f"way/{element.get('id')}",
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [coordinates],
-            },
+            "geometry": {"type": "Polygon", "coordinates": [coordinates]},
             "properties": {
                 "source": "openstreetmap",
                 "osm_id": element.get("id"),
@@ -128,14 +196,9 @@ def get_farmland_polygons(
                 "landuse": tags.get("landuse", ""),
                 "crop": tags.get("crop", ""),
             },
-        }
-
-        features.append(feature)
+        })
 
         if len(features) >= limit:
             break
 
-    return {
-        "type": "FeatureCollection",
-        "features": features,
-    }
+    return {"type": "FeatureCollection", "features": features}

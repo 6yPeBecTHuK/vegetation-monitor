@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vegetation Monitor — проверочный стенд</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<style>
+  * { box-sizing: border-box; margin: 0; font-family: system-ui, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; height: 100vh; }
+  header { padding: 10px 16px; background: #1b5e20; color: #fff; display: flex; gap: 16px; align-items: center; }
+  header h1 { font-size: 17px; }
+  header span { font-size: 12px; opacity: .85; }
+  .layout { flex: 1; display: flex; min-height: 0; }
+  aside { width: 360px; overflow-y: auto; padding: 12px; background: #f4f7f2;
+          display: flex; flex-direction: column; gap: 10px; }
+  aside section { background: #fff; border: 1px solid #e0e6dd; border-radius: 8px; padding: 10px; }
+  aside h3 { font-size: 13px; margin-bottom: 8px; color: #1b5e20; }
+  label { font-size: 12px; color: #555; display: block; margin-top: 6px; }
+  .radio { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 13px; color: #222; }
+  .radio input { width: auto; margin: 0; }
+  input, select, button { width: 100%; padding: 7px; margin-top: 4px;
+                          border: 1px solid #cfd8cf; border-radius: 6px; font-size: 13px; }
+  button { background: #2e7d32; border: none; color: #fff; cursor: pointer; }
+  button:hover { background: #1b5e20; }
+  .hint { font-size: 12px; color: #666; margin-top: 4px; }
+  #satInfo { margin-top: 6px; font-size: 12px; color: #1565c0; }
+  a { font-size: 12px; color: #1565c0; }
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #map { flex: 1.1; min-height: 260px; }
+  #chart { flex: 1; min-height: 220px; }
+  #zchart { flex: .7; min-height: 140px; }
+  #wchart { flex: .7; min-height: 150px; }
+  .period { border-left: 4px solid #999; padding: 6px 8px; margin: 6px 0;
+            background: #fafafa; font-size: 12px; border-radius: 4px; }
+  .period.stress { border-color: #ff9800; }
+  .period.critical { border-color: #d32f2f; }
+  .status { padding: 6px 12px; background: #263238; color: #eee; font-size: 12px; }
+  .status.err { background: #b71c1c; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌱 Vegetation Monitor</h1>
+  <span id="health">проверка API…</span>
+</header>
+
+<div class="layout">
+  <aside>
+    <section>
+      <h3>Режим работы</h3>
+      <label class="radio"><input type="radio" name="mode" value="dataset" checked>
+        1 · Полигоны датасета</label>
+      <label class="radio"><input type="radio" name="mode" value="draw">
+        2 · Свой полигон: спутник + погода по фигуре</label>
+    </section>
+
+    <section id="secDataset">
+      <h3>1. Полигон из датасета</h3>
+      <select id="polygonSelect"><option value="">— загрузка… —</option></select>
+      <button id="btnLoadPolygon">Показать ряд и аномалии</button>
+    </section>
+    <section>
+      <h3>Поиск региона и полей (OSM)</h3>
+      <input id="regionInput" placeholder="Например: Краснодарский край">
+      <button id="btnSearchRegion">Найти регион и загрузить поля</button>
+      <div id="regionInfo" class="hint"></div>
+    </section>
+
+    <section>
+      <h3>Заготовленные поля</h3>
+      <label class="radio"><input type="checkbox" id="chkPrepared" checked>
+        Показывать на карте</label>
+      <div id="preparedCount" class="hint">загрузка…</div>
+      <button id="btnSaveFields">Сохранить поля из OSM как заготовленные</button>
+      <p class="hint">Заготовки грузятся мгновенно; OSM — только для нового региона.</p>
+    </section>
+
+    <section id="secDraw">
+      <h3>2. Свой полигон на карте</h3>
+      <p class="hint">Нарисуйте полигон/прямоугольник инструментами в правом верхнем
+        углу карты — анализ запустится автоматически.</p>
+      <label>Начало периода<input type="date" id="startDate" value="2024-04-01"></label>
+      <label>Конец периода<input type="date" id="endDate" value="2024-09-30"></label>
+      <div id="satInfo" class="hint"></div>
+    </section>
+
+    <section>
+      <h3>Технический инференс (Задача 1)</h3>
+      <button id="btnInference">Сформировать submission.csv</button>
+      <div style="margin-top:6px">
+        <a id="downloadLink" href="/api/submission/download" hidden>Скачать submission.csv</a>
+      </div>
+      <div id="inferenceResult" class="hint"></div>
+    </section>
+
+    <section>
+      <h3>Аномальные периоды</h3>
+      <div id="periods"><p class="hint">Выберите полигон или нарисуйте его на карте.</p></div>
+    </section>
+  </aside>
+
+  <main>
+    <div id="map"></div>
+    <div id="chart"></div>
+    <div id="zchart"></div>
+    <div id="wchart"></div>
+  </main>
+</div>
+
+<div id="status" class="status">Готово</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
