@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# PyCharm
+.idea/
+*.iml
+
+# Данные (если они большие и не закоммичены)
+# data/*.csv
+
+# Временные файлы
+*.log
+.DS_Store
+Thumbs.db
+
+# Локальные артефакты (если они в .gitignore)
+# artifacts/*.pkl
+# artifacts/osm_cache/
+
+# Результаты
+submission.csv
