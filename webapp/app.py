@@ -55,7 +55,8 @@ class AnalyzeRequest(BaseModel):
     start: str
     end: str
 
-
+POLYGON_CACHE_DIR = ARTIFACTS_DIR / "polygon_cache"
+_POLY_MEMORY: Dict[str, Any] = {}
 # ------------------------------------------------------------------
 def _extract_geometry(geojson: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(geojson, dict):
@@ -261,6 +262,15 @@ def health():
 
 @app.get("/api/polygons")
 def list_polygons():
+    # 1) готовые данные с диска — мгновенно
+    idx_path = POLYGON_CACHE_DIR / "index.json"
+    if idx_path.exists():
+        try:
+            return json.loads(idx_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    # 2) фолбэк: живой подсчёт из датасета
     train_df = STATE.get("train")
     if train_df is None or train_df.empty:
         return []
@@ -270,6 +280,21 @@ def list_polygons():
 
 @app.get("/api/timeseries/{polygon_id}")
 def get_timeseries(polygon_id: str):
+    # 1) память
+    if polygon_id in _POLY_MEMORY:
+        return _POLY_MEMORY[polygon_id]
+
+    # 2) диск
+    path = POLYGON_CACHE_DIR / f"{polygon_id}.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            _POLY_MEMORY[polygon_id] = data
+            return data
+        except Exception:
+            pass
+
+    # 3) фолбэк: живой пересчёт
     filled_train = STATE.get("filled_train")
     if filled_train is None or filled_train.empty:
         raise HTTPException(404, "Датасет не загружен")
@@ -277,7 +302,6 @@ def get_timeseries(polygon_id: str):
     if polygon_df.empty:
         raise HTTPException(404, f"Полигон {polygon_id} не найден")
     return _payload_from_filled(polygon_id, polygon_df, STATE["clim"], "dataset")
-
 
 @app.post("/api/analyze")
 def analyze_polygon(request: AnalyzeRequest):

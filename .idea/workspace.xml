@@ -5,14 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ea1ab479-5204-4ccb-9a9f-dc58bb1d386d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/make_demo_fields.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/data/satellite_provider.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/data/weather_client.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/webapp/static/app.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/webapp/static/index.html" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/precompute.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/prepare_library.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/data/osm_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/data/osm_client.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/webapp/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/webapp/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/webapp/static/app.js" beforeDir="false" afterPath="$PROJECT_DIR$/webapp/static/app.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -23,8 +21,8 @@
     <option name="RECENT_TEMPLATES">
       <list>
         <option value="HTML File" />
-        <option value="Python Script" />
         <option value="JavaScript File" />
+        <option value="Python Script" />
       </list>
     </option>
   </component>
@@ -81,7 +79,7 @@
       <updated>1788540931177</updated>
       <workItem from="1788540932212" duration="6317000" />
       <workItem from="1788597254759" duration="8554000" />
-      <workItem from="1788608002864" duration="4992000" />
+      <workItem from="1788608002864" duration="7189000" />
     </task>
     <servers />
   </component>

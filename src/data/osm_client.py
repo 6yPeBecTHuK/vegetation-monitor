@@ -7,6 +7,7 @@
 from typing import Any, Dict, List, Tuple
 
 import requests
+import concurrent.futures
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 PHOTON_URL = "https://photon.komoot.io/api/"
@@ -116,53 +117,65 @@ def _search_photon(query: str, limit: int) -> List[Dict[str, Any]]:
 # ----------------------------------------------------------------------
 # Сельхозконтуры через Overpass
 # ----------------------------------------------------------------------
+
+
+def _overpass_one(url: str, query: str, timeout: int):
+    resp = requests.post(
+        url,
+        data={"data": query},
+        headers=HEADERS,
+        timeout=timeout,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"{url}: HTTP {resp.status_code}")
+    return resp.json()
+
+
 def get_farmland_polygons(
     bbox: Tuple[float, float, float, float],
-    limit: int = 100,
+    limit: int = 60,
 ) -> Dict[str, Any]:
     south, west, north, east = bbox
 
-    # Расширенный набор тегов для российских сельхозземель
     query = f"""
-    [out:json][timeout:60];
-    (
-      way["landuse"~"farmland|meadow|orchard|vineyard|plant_nursery|greenhouse_horticulture"]
-        ({south},{west},{north},{east});
-      way["natural"="grassland"]
-        ({south},{west},{north},{east});
-    );
+    [out:json][timeout:25];
+    way
+      ["landuse"~"farmland|orchard|vineyard"]
+      ({south},{west},{north},{east});
     out geom {limit};
     """
+
+    # ВАЖНО: убираем Accept header — Overpass сам определяет формат через [out:json]
+    headers = {
+        "User-Agent": "vegetation-monitor/1.0",
+    }
 
     errors = []
 
     for url in OVERPASS_URLS:
         try:
+            # Увеличиваем таймаут до 60 секунд
             response = requests.post(
                 url,
                 data={"data": query},
-                headers=HEADERS,
-                timeout=90,
+                headers=headers,
+                timeout=60,
             )
 
             if response.status_code != 200:
                 errors.append(f"{url}: HTTP {response.status_code}")
                 continue
 
-            data = response.json()
-            elements = data.get("elements", [])
-            print(f"[Overpass] {url}: найдено объектов {len(elements)}")
-            return _overpass_to_geojson(data, limit)
+            return _overpass_to_geojson(response.json(), limit)
 
         except requests.exceptions.Timeout:
-            errors.append(f"{url}: таймаут")
+            errors.append(f"{url}: таймаут (60 с)")
             continue
         except Exception as exc:
             errors.append(f"{url}: {exc}")
             continue
 
     raise RuntimeError(" | ".join(errors))
-
 
 def _overpass_to_geojson(data: Dict[str, Any], limit: int) -> Dict[str, Any]:
     features = []

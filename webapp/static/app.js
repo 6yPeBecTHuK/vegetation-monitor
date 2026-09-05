@@ -208,7 +208,7 @@ async function loadFields(bounds) {
     bounds.getEast(),
   ].join(",");
 
-  const gj = await api("/api/fields?bbox=" + bbox + "&limit=20");
+  const gj = await api("/api/fields?bbox=" + bbox + "&limit=100");
 
   fieldsLayer.clearLayers();
 
