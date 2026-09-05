@@ -16,12 +16,7 @@ COPY data ./data
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-# Обучение и предвычисление на этапе сборки:
-# образ получается самодостаточным, на старте сервис не считает ничего
-RUN mkdir -p artifacts \
-    && python -m src.train \
-    && python -m src.precompute
-
+COPY artifacts ./artifacts
 # ВАЖНО: shell-форма (БЕЗ квадратных скобок) —
 # только так sh раскроет $PORT в число
 CMD uvicorn webapp.app:app --host 0.0.0.0 --port $PORT
