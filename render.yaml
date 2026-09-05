@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: vegetation-monitor
+    runtime: python
+    pythonVersion: "3.11"
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+      python -m src.train
+      python -m src.precompute
+    startCommand: uvicorn webapp.app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONPATH
+        value: "."
